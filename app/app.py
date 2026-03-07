@@ -1,7 +1,15 @@
 from fastapi import FastAPI, HTTPException
 from .schema import PostCreate, PostResponse
+from app.db import create_db_and_tables, get_async_session, Post
+from sqlalchemy.ext.asyncio import AsyncSession
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app:FastAPI):
+    await create_db_and_tables()
+    yield
+
+app = FastAPI(lifespan= lifespan)
 
 text_psots = {
     1: { "title": "Introduction to Python", "content": "Python is a high-level, dynamically typed programming language known for its readability and versatility." },

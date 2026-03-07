@@ -6,4 +6,4 @@ class PostCreate(BaseModel):
     
 class PostResponse(BaseModel):
     title:str
-    content:str
+    content:str    
