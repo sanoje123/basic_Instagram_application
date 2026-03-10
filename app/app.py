@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Form, Depends, File, UploadFile
 from .schema import PostCreate, PostResponse
 from app.db import create_db_and_tables, get_async_session, Post
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
+from sqlalchemy import select
 
 @asynccontextmanager
 async def lifespan(app:FastAPI):
@@ -11,34 +12,41 @@ async def lifespan(app:FastAPI):
 
 app = FastAPI(lifespan= lifespan)
 
-text_psots = {
-    1: { "title": "Introduction to Python", "content": "Python is a high-level, dynamically typed programming language known for its readability and versatility." },
-    2: { "title": "Machine Learning Basics", "content": "Machine learning is a field of artificial intelligence that focuses on building systems that learn from data." },
-    3: { "title": "REST APIs Explained", "content": "A REST API allows communication between client and server using standard HTTP methods like GET, POST, PUT, and DELETE." },
-    4: { "title": "Database Indexing", "content": "Indexing improves database query performance by allowing faster lookup of rows in a table." },
-    5: { "title": "Docker Containers", "content": "Docker enables developers to package applications and their dependencies into portable containers." },
-    6: { "title": "Neural Networks", "content": "Neural networks are computational models inspired by the human brain, commonly used in deep learning." },
-    7: { "title": "Git Version Control", "content": "Git is a distributed version control system used to track changes in source code during development." },
-    8: { "title": "Cloud Computing", "content": "Cloud computing provides on-demand access to computing resources over the internet." },
-    9: { "title": "Data Structures", "content": "Data structures organize and store data efficiently, examples include arrays, linked lists, and trees." },
-    10: { "title": "Cybersecurity Fundamentals", "content": "Cybersecurity involves protecting systems, networks, and data from digital attacks." }
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    caption: str = Form(""),    #caption comes from a form field, not JSON
+    session: AsyncSession = Depends(get_async_session)  #Before running this function, give me a database session.
+):
+    post = Post(
+        caption=caption,
+        url="dummy url",
+        file_type="photo",
+        file_name="name"
+    )
+    
+    session.add(post)   #This tells SQLAlchemy:"Add this object to the transaction." - It does NOT write to database yet.
+    await session.commit()  #Now SQLAlchemy sends the query to the database. Equivalent SQL: INSERT INTO post (...) VALUES (...)
+    await session.refresh(post) #After commit, the post object is updated with any new data from the database, such as the generated id. This is important for getting the id of the newly created post.
+    return post
 
-}
+@app.get("/feed")
+async def get_feed(
+    session: AsyncSession = Depends(get_async_session)
+    ):
+    result  = await session.execute(select(Post).order_by(Post.date.desc()))    #This is how you execute a query with SQLAlchemy. select(Post) creates a SELECT statement for the Post model, ordered_by(Post.created_at.desc()) sorts the results by creation date in descending order. The result variable will contain the query results, which can be accessed using result.scalars().all() to get a list of Post objects.
+    posts = [raw[0] for raw in result.all()]    
+    
+    posts_data = []
+    for post in posts:
+        posts_data.append({
+            "id":str(post.id),
+            "captiopn":post.caption,
+            "url":post.url,
+            "file_type":post.file_type,
+            "file_name":post.file_name,
+            "created_at":post.date.isoformat()
+        })
+    
+    return {"posts": posts_data}
 
-@app.get("/posts")
-def get_all_posts(limit: int = None):
-    if limit:
-        return list(text_psots.values())[:limit]
-    return text_psots
-
-@app.get("/posts/{post_id}")
-def get_post(post_id: int) -> PostResponse:
-    if post_id not in text_psots:
-        raise HTTPException(status_code=404, detail="Post not found")
-    return text_psots.get(post_id)
-
-@app.post("/posts")
-def add_post(post:PostCreate) -> PostResponse:
-    new_post = {"title":post.title, "content":post.content}
-    text_psots[max(text_psots.keys())+1] = new_post
-    return new_post
