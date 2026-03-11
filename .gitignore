@@ -9,11 +9,12 @@ wheels/
 # Virtual environments
 .venv
 
-# Other
-.env
-
 # Python version manager (optional)
 .python-version
 
 # Logs
 *.log
+
+# Other
+.env
+test.db

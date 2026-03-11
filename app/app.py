@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Form, Depends, File, UploadFile
-from .schema import PostCreate, PostResponse
+from .schema import PostCreate, PostResponse, UserRead, UserCreate, UserUpdate
 from app.db import create_db_and_tables, get_async_session, Post
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
@@ -9,6 +9,7 @@ import shutil
 import os
 import uuid
 import tempfile
+from app.users import current_active_user, auth_backend, fastapi_users
 
 @asynccontextmanager
 async def lifespan(app:FastAPI):
@@ -16,6 +17,12 @@ async def lifespan(app:FastAPI):
     yield
 
 app = FastAPI(lifespan= lifespan)
+
+app.include_router(fastapi_users.get_auth_router(auth_backend), prefix="/auth/jwt", tags=["auth"]) #mounting authentication routes into your FastAPI application
+app.include_router(fastapi_users.get_register_router(UserRead, UserCreate), prefix="/auth", tags=["auth"]) #mounting registration routes into your FastAPI application
+app.include_router(fastapi_users.get_reset_password_router(), prefix="/auth", tags=["auth"]) #mounting password reset routes into your FastAPI application
+app.include_router(fastapi_users.get_verify_router(UserRead), prefix="/auth", tags=["auth"]) #mounting email verification routes into your FastAPI application
+app.include_router(fastapi_users.get_users_router(UserRead, UserUpdate), prefix="/users", tags=["users"]) #mounting user management routes into your FastAPI application
 
 @app.post("/upload")
 async def upload_file(
