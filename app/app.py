@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Form, Depends, File, UploadFile
 from .schema import PostCreate, PostResponse, UserRead, UserCreate, UserUpdate
-from app.db import create_db_and_tables, get_async_session, Post
+from app.db import create_db_and_tables, get_async_session, Post, User
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
 from sqlalchemy import select
@@ -10,7 +10,6 @@ import os
 import uuid
 import tempfile
 from app.users import current_active_user, auth_backend, fastapi_users
-
 @asynccontextmanager
 async def lifespan(app:FastAPI):
     await create_db_and_tables()
@@ -28,6 +27,7 @@ app.include_router(fastapi_users.get_users_router(UserRead, UserUpdate), prefix=
 async def upload_file(
     file: UploadFile = File(...),
     caption: str = Form(""),    #caption comes from a form field, not JSON
+    user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session)  #Before running this function, give me a database session.
 ):
     temp_file_path = None
@@ -46,6 +46,7 @@ async def upload_file(
             )
             
         post = Post(
+                user_id=user.id,
                 caption=caption,
                 url=upload_resut.url,
                 file_type="video" if file.content_type.startswith("video/") else "image",
@@ -65,27 +66,35 @@ async def upload_file(
 
 @app.get("/feed")
 async def get_feed(
+    user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session)
     ):
     result  = await session.execute(select(Post).order_by(Post.date.desc()))    #This is how you execute a query with SQLAlchemy. select(Post) creates a SELECT statement for the Post model, ordered_by(Post.created_at.desc()) sorts the results by creation date in descending order. The result variable will contain the query results, which can be accessed using result.scalars().all() to get a list of Post objects.
-    posts = [raw[0] for raw in result.all()]    
-    
+    posts = [raw[0] for raw in result.all()]
+
+    result = await session.execute(select(User))
+    users = [raw[0] for raw in result.all()]
+    user_dict = {u.id: u.email for u in users}
+
     posts_data = []
     for post in posts:
         posts_data.append({
             "id":str(post.id),
+            "user_id":str(post.user_id),
             "caption":post.caption,
             "url":post.url,
             "file_type":post.file_type,
             "file_name":post.file_name,
-            "created_at":post.date.isoformat()
+            "created_at":post.date.isoformat(),
+            "is_owner": post.user_id == user.id,
+            "email":user_dict.get(post.user_id, "Unknown")
         })
     
     return {"posts": posts_data}
 
 
 @app.delete("/post/{post_id}")
-async def delete_post(post_id: str, session:AsyncSession = Depends(get_async_session)):
+async def delete_post(post_id: str, session:AsyncSession = Depends(get_async_session), user: User = Depends(current_active_user)):
     try:
         post_uuid = uuid.UUID(post_id)
         
@@ -95,6 +104,9 @@ async def delete_post(post_id: str, session:AsyncSession = Depends(get_async_ses
         if not post:
             raise HTTPException(status_code=404, detail="Element not found.")
         
+        if post.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this post.")
+
         await session.delete(post)
         await session.commit()
         

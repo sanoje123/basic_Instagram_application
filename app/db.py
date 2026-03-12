@@ -27,7 +27,7 @@ class Post(Base):
     file_name = Column(String, nullable=False)
     date = Column(DateTime, default=datetime.utcnow)
 
-    use = relationship("User", back_populates="posts")  # Establishes the relationship with the User table
+    user = relationship("User", back_populates="posts")  # Establishes the relationship with the User table
 
 engine = create_async_engine(DATABASE_URL)  #Creates async connection manager
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)    #Creates factory for async database sessions, expire_on_commit=False - after commit, the objects will not be expired, so they can be used without re-querying the database
